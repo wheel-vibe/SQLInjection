@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Lab: SQL Injection Vulnerable Service</title>
+    <style>
+        :root {
+            --primary-bg: #f0f2f5;
+            --terminal-bg: #1e1e1e;
+            --accent-color: #007bff;
+            --danger: #dc3545;
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--primary-bg); margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid var(--accent-color); padding-bottom: 10px; }
+        .lab-section { margin-bottom: 40px; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input { width: 100%; padding: 8px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background: var(--accent-color); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+        button:hover { opacity: 0.9; }
+        
+        /* SQL Log View */
+        .console { background: var(--terminal-bg); color: #00ff00; padding: 15px; border-radius: 5px; font-family: 'Courier New', Courier, monospace; font-size: 14px; overflow-x: auto; margin-top: 10px; }
+        .sql-highlight { color: #ffcc00; font-weight: bold; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f8f9fa; }
+        .flag { color: var(--danger); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🛡️ SQL Injection Practice Lab</h1>
+    <p>본 페이지는 SQL Injection 취약점이 존재하도록 설계된 실습 환경입니다.</p>
+
+    <section class="lab-section">
+        ### 과제 1: 관리자 계정 로그인 우회
+        <div id="login-form">
+            <label>Username</label>
+            <input type="text" id="loginId" placeholder="admin">
+            <label>Password</label>
+            <input type="password" id="loginPw" placeholder="password">
+            <button onclick="simulateLogin()">Login</button>
+        </div>
+        <div id="login-result"></div>
+    </section>
+
+    <section class="lab-section">
+        ### 과제 2: 사원 검색을 통한 데이터베이스 정보 탈취
+        <div id="search-form">
+            <label>사원 이름 검색</label>
+            <input type="text" id="searchName" placeholder="사원명을 입력하세요 (예: 길동)" onkeyup="updateQueryPreview()">
+            <button onclick="simulateSearch()">Search</button>
+        </div>
+        <div id="search-result"></div>
+    </section>
+
+    <section>
+        <h3>🔍 Backend Query Monitor</h3>
+        <p>서버에서 실제로 생성되어 실행되는 쿼리를 실시간으로 모니터링합니다.</p>
+        <div class="console" id="query-log">
+            READY: 입력을 기다리는 중...
+        </div>
+    </section>
+</div>
+
+<script>
+    // 1. 가상 데이터베이스 설정
+    const MOCK_DB = {
+        users: [
+            { id: 'admin', pw: 'SuperSecret123!', role: 'Administrator' },
+            { id: 'guest', pw: 'guest123', role: 'Guest' }
+        ],
+        employees: [
+            { name: '홍길동', position: '팀장', phone: '010-1234-5678' },
+            { name: '김철수', position: '대리', phone: '010-9876-5432' },
+            { name: '이영희', position: '사원', phone: '010-5555-4444' },
+            { name: 'FLAG_HOLDER', position: 'SYSTEM', phone: 'FLAG{SQL_INJECTION_MASTER_2026}' }
+        ]
+    };
+
+    const logConsole = document.getElementById('query-log');
+
+    // 2. 쿼리 로그 업데이트 함수
+    function updateLog(query) {
+        logConsole.innerHTML = `<span class="sql-highlight">Executed Query:</span><br>${query}`;
+    }
+
+    // 3. 로그인 시뮬레이션 (Auth Bypass 취약점)
+    function simulateLogin() {
+        const id = document.getElementById('loginId').value;
+        const pw = document.getElementById('loginPw').value;
+
+        // 취약한 쿼리 생성 (문자열 결합)
+        const sqlQuery = `SELECT * FROM users WHERE id = '${id}' AND pw = '${pw}'`;
+        updateLog(sqlQuery);
+
+        // 취약점 시뮬레이션 로직
+        // 실제 DB라면 SQL 엔진이 이 문자열을 해석하지만, 여기서는 단순한 bypass 로직으로 구현
+        if ((id.includes("'") && id.includes("OR")) || (pw.includes("'") && pw.includes("OR"))) {
+            document.getElementById('login-result').innerHTML = "<p style='color:green;'>✅ 로그인 성공! (SQL Injection 우회됨)</p>";
+        } else {
+            const user = MOCK_DB.users.find(u => u.id === id && u.pw === pw);
+            if (user) {
+                document.getElementById('login-result').innerHTML = `<p style='color:green;'>✅ 로그인 성공: ${user.id}님 환영합니다.</p>`;
+            } else {
+                document.getElementById('login-result').innerHTML = "<p style='color:red;'>❌ 아이디 또는 비밀번호가 틀렸습니다.</p>";
+            }
+        }
+    }
+
+    // 4. 사원 검색 시뮬레이션 (UNION 기반 취약점)
+    function simulateSearch() {
+        const name = document.getElementById('searchName').value;
+        const sqlQuery = `SELECT name, position, phone FROM employees WHERE name LIKE '%${name}%'`;
+        updateLog(sqlQuery);
+
+        const resultDiv = document.getElementById('search-result');
+        
+        // UNION Injection 처리 시뮬레이션
+        if (name.toUpperCase().includes("UNION SELECT")) {
+            // UNION 공격을 감지하면 DB 정보를 반환하는 시뮬레이션
+            resultDiv.innerHTML = `
+                <table>
+                    <tr><th>Name</th><th>Position</th><th>Phone</th></tr>
+                    <tr><td>admin</td><td>Administrator</td><td>SuperSecret123!</td></tr>
+                    <tr class="flag"><td>SYSTEM</td><td>FLAG</td><td>FLAG{SQL_INJECTION_MASTER_2026}</td></tr>
+                </table>
+                <p>⚠️ <strong>공격 감지:</strong> UNION 연산을 통해 다른 테이블(users)의 정보를 탈취했습니다.</p>
+            `;
+        } else {
+            const filtered = MOCK_DB.employees.filter(e => e.name.includes(name));
+            if (filtered.length > 0) {
+                let html = "<table><tr><th>이름</th><th>직급</th><th>연락처</th></tr>";
+                filtered.forEach(e => {
+                    html += `<tr><td>${e.name}</td><td>${e.position}</td><td>${e.phone}</td></tr>`;
+                });
+                html += "</table>";
+                resultDiv.innerHTML = html;
+            } else {
+                resultDiv.innerHTML = "<p>검색 결과가 없습니다.</p>";
+            }
+        }
+    }
+
+    function updateQueryPreview() {
+        const name = document.getElementById('searchName').value;
+        logConsole.innerHTML = `<span class="sql-highlight">Real-time Query Preview:</span><br>SELECT name, position, phone FROM employees WHERE name LIKE '%${name}%'`;
+    }
+</script>
+
+</body>
+</html>
